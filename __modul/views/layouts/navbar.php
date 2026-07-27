@@ -80,7 +80,7 @@ $user_role = $user_level['nama_level'];
           <i class="ph-duotone ph-lock-key"></i>
           <span>Ubah Password</span>
         </a>
-        <a href="<?= Yii::$app->params['base_url'] ?>/site/logout" class="dropdown-item">
+        <a href="<?= \yii\helpers\Url::to(['/site/logout']) ?>" class="dropdown-item">
           <i class="ph-duotone ph-power"></i>
           <span>Logout</span>
         </a>
@@ -255,7 +255,7 @@ $user_role = $user_level['nama_level'];
                     <span>Akun Saya</span>
                   </span>
                 </a>
-                <a href="<?= Yii::$app->params['base_url'] ?>/site/logout" class="dropdown-item">
+                <a href="<?= \yii\helpers\Url::to(['/site/logout']) ?>" class="dropdown-item">
                   <span class="d-flex align-items-center">
                     <i class="ph-duotone ph-power"></i>
                     <span>Logout</span>

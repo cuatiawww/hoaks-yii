@@ -150,6 +150,9 @@ class LaporanHoaks extends ActiveRecord
             } elseif ($type === 'VERIFIED') {
                 $statusLabel = $this->status_hoaks ? 'DISINFORMASI / HOAKS' : 'FAKTA / RESMI';
                 $statusColor = $this->status_hoaks ? '#d9534f' : '#5cb85c';
+                $pubUrlHtml = !empty($this->counter_fact_urls)
+                    ? "<p style='margin: 15px 0 5px 0;'><strong>Link URL Berita / Artikel Cek Fakta Resmi:</strong></p><p style='margin: 0;'><a href='" . htmlspecialchars($this->counter_fact_urls) . "' target='_blank' style='color: #07877c; font-weight: bold; word-break: break-all;'>" . htmlspecialchars($this->counter_fact_urls) . "</a></p>"
+                    : '';
 
                 $subject = '[SIPKK Cek Fakta] Hasil Verifikasi Laporan - Tiket: ' . $this->no_tiket;
                 $bodyHtml = "
@@ -162,6 +165,7 @@ class LaporanHoaks extends ActiveRecord
                             <p style='margin: 0 0 10px 0;'><strong>Kesimpulan Verifikasi:</strong> <span style='color: " . $statusColor . "; font-weight: bold;'>" . $statusLabel . "</span></p>
                             <p style='margin: 0 0 10px 0;'><strong>Penjelasan Fakta:</strong></p>
                             <p style='margin: 0; line-height: 1.6;'>" . nl2br(htmlspecialchars($this->penjelasan_fakta ?? 'Telah diverifikasi sesuai standar cek fakta resmi Kemenkes.')) . "</p>
+                            " . $pubUrlHtml . "
                         </div>
                         <p>Terima kasih atas peran aktif Anda dalam mencegah penyebaran disinformasi kesehatan di masyarakat.</p>
                         <hr style='border: 0; border-top: 1px solid #ddd; margin: 20px 0;' />

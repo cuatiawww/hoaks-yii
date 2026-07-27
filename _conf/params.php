@@ -8,8 +8,8 @@ define('DASHBOARD_URL', $isLocal ? 'http://localhost:3000' : 'https://puskes-kap
 return [
     'adminEmail'   => 'admin@example.com',
     'senderEmail'  => $_ENV['MAIL_FROM_ADDRESS'] ?? 'noreply@example.com',
-    'senderName'   => $_ENV['MAIL_FROM_NAME'] ?? 'Puskesmas Notification',
-    'base_url'     => '',
+    'senderName'   => $_ENV['MAIL_FROM_NAME'] ?? 'SIPKK Notification',
+    'base_url'     => '/hoaks-yii',
     'frontend_url' => DASHBOARD_URL,
 ];
 

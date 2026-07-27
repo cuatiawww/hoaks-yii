@@ -31,9 +31,18 @@ class LaporanPengaduanController extends BaseController
             ],
         ]);
 
+        $countSemua = (int) LaporanHoaks::find()->count();
+        $countBaru = (int) LaporanHoaks::find()->where(['status_verifikasi' => LaporanHoaks::STATUS_BARU])->count();
+        $countTerverifikasi = (int) LaporanHoaks::find()->where(['status_verifikasi' => LaporanHoaks::STATUS_TERVERIFIKASI])->count();
+        $countDitolak = (int) LaporanHoaks::find()->where(['status_verifikasi' => LaporanHoaks::STATUS_DITOLAK])->count();
+
         return $this->render('index', [
             'dataProvider' => $dataProvider,
             'statusFilter' => $statusFilter,
+            'countSemua' => $countSemua,
+            'countBaru' => $countBaru,
+            'countTerverifikasi' => $countTerverifikasi,
+            'countDitolak' => $countDitolak,
         ]);
     }
 
@@ -61,28 +70,46 @@ class LaporanPengaduanController extends BaseController
     }
 
     /**
-     * Verifikasi & Setujui Laporan Isu -> Kirim Email Notifikasi ke Pelapor
+     * Verifikasi & Setujui Laporan Isu -> Kirim Email Notifikasi & Link Publikasi ke Pelapor
      */
     public function actionVerifikasi($id)
     {
         $model = $this->findModel($id);
+
+        if (Yii::$app->request->isPost) {
+            $post = Yii::$app->request->post();
+            if (isset($post['status_hoaks'])) {
+                $model->status_hoaks = (bool)$post['status_hoaks'];
+            }
+            if (isset($post['penjelasan_fakta'])) {
+                $model->penjelasan_fakta = $post['penjelasan_fakta'];
+            }
+            if (isset($post['counter_fact_urls'])) {
+                $model->counter_fact_urls = $post['counter_fact_urls'];
+            }
+        }
+
         $model->status_verifikasi = LaporanHoaks::STATUS_TERVERIFIKASI;
         $model->verified_at = date('Y-m-d H:i:s');
         $model->verified_by = Yii::$app->user->id ?? 1;
 
         if ($model->save()) {
-            // Send SMTP Email Notification to reporter
+            // Send SMTP Email Notification with publication link to reporter
             $emailSent = $model->sendEmailNotification('VERIFIED');
-            if ($emailSent) {
-                Yii::$app->session->setFlash('success', 'Laporan berhasil diverifikasi dan email notifikasi hasil verifikasi telah terkirim ke ' . htmlspecialchars($model->email_pelapor) . '.');
-            } else {
-                Yii::$app->session->setFlash('warning', 'Laporan diverifikasi, namun terjadi kendala saat mengirim email notifikasi SMTP.');
-            }
+            Yii::$app->session->setFlash('swal', [
+                'icon' => 'success',
+                'title' => 'Laporan Diverifikasi & Dipublikasi!',
+                'text' => 'Status laporan terverifikasi dan email berisi link hasil cek fakta telah terkirim ke ' . $model->email_pelapor,
+            ]);
         } else {
-            Yii::$app->session->setFlash('error', 'Gagal memverifikasi laporan.');
+            Yii::$app->session->setFlash('swal', [
+                'icon' => 'error',
+                'title' => 'Gagal Memverifikasi',
+                'text' => 'Terjadi kesalahan sistem saat memproses verifikasi.',
+            ]);
         }
 
-        return $this->redirect(['view', 'id' => $model->id]);
+        return $this->redirect(['index']);
     }
 
     /**
@@ -100,12 +127,20 @@ class LaporanPengaduanController extends BaseController
 
         if ($model->save()) {
             $model->sendEmailNotification('REJECTED');
-            Yii::$app->session->setFlash('info', 'Laporan telah ditolak dan email pemberitahuan telah dikirim ke pelapor.');
+            Yii::$app->session->setFlash('swal', [
+                'icon' => 'warning',
+                'title' => 'Laporan Ditolak',
+                'text' => 'Email pemberitahuan penolakan laporan telah dikirim ke pelapor.',
+            ]);
         } else {
-            Yii::$app->session->setFlash('error', 'Gagal menolak laporan.');
+            Yii::$app->session->setFlash('swal', [
+                'icon' => 'error',
+                'title' => 'Gagal Menolak',
+                'text' => 'Terjadi kesalahan saat memproses penolakan.',
+            ]);
         }
 
-        return $this->redirect(['view', 'id' => $model->id]);
+        return $this->redirect(['index']);
     }
 
     protected function findModel($id)
