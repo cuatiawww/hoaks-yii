@@ -1,0 +1,286 @@
+<?php
+
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+
+$params = require __DIR__ . '/params.php';
+$db = require __DIR__ . '/db.php';
+$db_user = require __DIR__ . '/db_user.php';
+
+$params['storage'] = [
+    'driver' => 'local',
+    's3Enabled' => false,
+];
+
+$params['redis'] = [
+    'enabled' => false,
+];
+
+$config = [
+    'id' => 'basic',    
+    'bootstrap' => ['log'],
+    'basePath' => dirname(__DIR__) . '/__modul',
+    'runtimePath' => dirname(__DIR__) . '/runtime',
+    'vendorPath' => dirname(__DIR__) . '/vendor',
+    'language' => 'id',
+    'aliases' => [
+        '@bower' => '@vendor/bower-asset',
+        '@npm'   => '@vendor/npm-asset',
+        '@asset_luar'   => dirname(dirname(__DIR__)).'',
+    ],
+    'timeZone' => 'Asia/Jakarta',
+    'components' => [
+        
+        'assetManager' => [ 'bundles' => 
+            
+            [ 'yii\web\JqueryAsset' => 
+                [ 'jsOptions' => 
+                    [ 'position' => \yii\web\View::POS_HEAD ],
+                ],
+               
+            ],
+
+           
+            
+    
+        ],
+
+        
+        // 'formatter' => [
+        //     'timeZone' => 'Asia/Jakarta',
+        // ],
+        
+        // 'reCaptcha' => [
+		// 	'class' => 'himiklab\yii2\recaptcha\ReCaptchaConfig',
+		// 	'siteKeyV2' => $_ENV['RECAPTCHA2_SITEKEY'],
+		// 	'secretV2' => $_ENV['RECAPTCHA2_SECRET'],			
+		// ],
+        // // 'reCaptcha3' => [
+        // //     'class'      => 'kekaadrenalin\recaptcha3\ReCaptcha',
+        // //     'site_key' => $_ENV['siteKeyV3'],
+        // //     'secret_key' => $_ENV['secretV3'],
+        // // ],
+        'request' => [
+            // !!! insert a secret key in the following (if it is empty) - this is required by cookie validation
+            'cookieValidationKey' => 'kemkes!@#$%^&*()',
+            'parsers' => [
+                'application/json' => 'yii\web\JsonParser',
+            ],
+        ],
+        'cache' => [
+            'class' => 'yii\caching\FileCache',
+        ],
+        'user' => [
+            'identityClass' => 'app\models\User',
+            'enableAutoLogin' => false,
+        ],
+        'session' => [
+            'class' => 'yii\web\Session',
+            'cookieParams' => ['lifetime' => 3600 * 4],
+            'timeout' => 3600*4,
+            'useCookies' => true,
+        ],
+        'errorHandler' => [
+            'errorAction' => 'site/error',
+        ],
+        'mailer' => [
+            'class' => \yii\swiftmailer\Mailer::class,
+            'useFileTransport' => false,
+            'transport' => [
+                'class' => 'Swift_SmtpTransport',
+                'host' => $_ENV['MAIL_HOST'] ?? 'smtp.gmail.com',
+                'port' => $_ENV['MAIL_PORT'] ?? 587,
+                'encryption' => $_ENV['MAIL_ENCRYPTION'] ?? 'tls',
+                'username' => $_ENV['MAIL_USERNAME'] ?? '',
+                'password' => $_ENV['MAIL_PASSWORD'] ?? '',
+            ],
+        ],
+        'log' => [
+            'traceLevel' => YII_DEBUG ? 3 : 0,
+            'targets' => [
+                [
+                    'class' => 'yii\log\FileTarget',
+                    'levels' => ['error', 'warning', 'info'],
+                    'logFile' => '@runtime/logs/app.log',
+                ],
+            ],
+        ],
+        'db' => $db,
+        'db_user' => $db_user,
+        'urlManager' => [
+            'enablePrettyUrl' => true,
+            'showScriptName' => false,
+            'rules' => [
+                'file-upload/upload-file'        => 'file-upload/upload-file',
+                'file-upload/render'             => 'file-upload/render',
+                'file-upload/lihat-pdf'          => 'file-upload/lihat-pdf',
+                'system-setting/index'           => 'system-setting/index',
+                'system-setting/serve-image'     => 'system-setting/serve-image',
+
+                // ── Public REST API Pengaduan Hoaks ──────────────────────────────
+                'POST api/pengaduan/submit'      => 'api-pengaduan/submit',
+                'GET api/pengaduan/lacak'       => 'api-pengaduan/lacak',
+                'GET api/pengaduan/ping'        => 'api-pengaduan/ping',
+
+                // ── Custom DB-based UrlRule (untuk routing halaman lainnya) ─────────────
+                ['class' => 'app\\models\\UrlRule', 'connectionID' => 'db'],
+            ],
+
+        ],
+    ],
+'as beforeRequest' => [
+    'class' => 'yii\filters\AccessControl',
+    'rules' => [
+        [
+            'allow' => true,
+            'roles' => ['?', '@'],
+            'matchCallback' => function($rule, $action) {
+                // Selalu izinkan OPTIONS request (CORS preflight dari browser)
+                if (\Yii::$app->request->isOptions) {
+                    return true;
+                }
+
+                $controller = $action->controller->id;
+                $actionId   = $action->id;
+
+                if ($controller === 'api-pengaduan' && in_array($actionId, ['submit', 'lacak', 'ping'], true)) {
+                    return true;
+                }
+
+                /**
+                 * JWT Authentication untuk request dari Next.js/Vercel
+                 *
+                 * Yii2 menggunakan PHP session untuk auth, tapi request server-to-server
+                 * dari Vercel tidak bisa bawa session cookie (beda domain).
+                 * Solusi: baca Authorization: Bearer <token>, validasi JWT, login user.
+                 */
+                $authHeader = Yii::$app->request->headers->get('Authorization', '');
+                $rawToken = '';
+                if (strncasecmp($authHeader, 'Bearer ', 7) === 0) {
+                    $rawToken = trim(substr($authHeader, 7));
+                } else {
+                    $rawToken = Yii::$app->request->get('token') ?? '';
+                }
+
+                if (
+                    Yii::$app->user->isGuest
+                    && $rawToken !== ''
+                ) {
+                    try {
+                        $parts = explode('.', $rawToken);
+                        if (count($parts) === 3) {
+                            $b64 = fn(string $s): string => str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($s));
+                            $b64d = fn(string $s): string => base64_decode(str_replace(['-', '_'], ['+', '/'], $s));
+
+                            $header  = $b64d($parts[0]);
+                            $payload = $b64d($parts[1]);
+                            $sigProvided = $parts[2];
+
+                            $secret = $_ENV['JWT_SECRET'] ?? 'kemkes_puskesmas_jwt_secret_key_2026';
+                            $expectedSig = $b64(hash_hmac('sha256', $parts[0] . '.' . $parts[1], $secret, true));
+
+                            if (!hash_equals($expectedSig, $sigProvided)) {
+                                $fallbackSecret = Yii::$app->request->cookieValidationKey ?: 'kemkes!@#$%^&*()';
+                                $expectedSig = $b64(hash_hmac('sha256', $parts[0] . '.' . $parts[1], $fallbackSecret, true));
+                            }
+                            if (!hash_equals($expectedSig, $sigProvided)) {
+                                $expectedSig = $b64(hash_hmac('sha256', $parts[0] . '.' . $parts[1], 'kemkes!@#$%^&*()', true));
+                            }
+
+                            if (hash_equals($expectedSig, $sigProvided)) {
+                                $data = json_decode($payload, true);
+                                $userId = $data['sub'] ?? null;
+                                $exp    = $data['exp'] ?? 0;
+
+                                if ($userId && $exp > time()) {
+                                    $user = \app\models\User::findIdentity((int) $userId);
+                                    if ($user) {
+                                        Yii::$app->user->setIdentity($user);
+                                    }
+                                }
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        Yii::warning('JWT auth gagal: ' . $e->getMessage(), __METHOD__);
+                    }
+                }
+
+                // SiteController public actions
+                if ($controller === 'site' && in_array($actionId, [
+                    'login', 'login-api', 'captcha', 're-captcha',
+                    'register', 'register-success', 'register-kabupaten',
+                    'verify-email', 'resend-otp', 'waiting-approval', 'error',
+                ], true)) return true;
+
+                // ForgotPasswordController
+                if ($controller === 'forgot-password' && in_array($actionId, [
+                    'request', 'verify',
+                ], true)) return true;
+
+
+
+                // Dynamic check for public actions from the controller
+                if (method_exists($action->controller, 'isActionPublic') && $action->controller->isActionPublic($actionId)) {
+                    return true;
+                }
+
+                if ($controller === 'file-upload' && in_array($actionId, ['render', 'lihat-pdf'], true)) {
+                    return true;
+                }
+
+                // UserRegistrationController public actions
+                if ($controller === 'user-registration' && in_array($actionId, [
+                    'register', 'verify-email', 'resend-otp',
+                    'waiting-approval', 'recover-registration', 'edit-registration',
+                ], true)) return true;
+
+                // AJAX endpoints
+                if (in_array($controller, ['formulir-bencana', 'laporan-kejadian']) &&
+                    in_array($actionId, ['get-kabupaten', 'get-kecamatan', 'debug-provinsi', 'db-info', 'ping', 'test-ajax'], true)
+                ) return true;
+
+                return false;
+            },
+        ],
+        [
+            'allow' => true,
+            'roles' => ['@'],
+        ],
+    ],
+    'denyCallback' => function () {
+        return Yii::$app->response->redirect(['site/login']);
+    },
+],
+
+    'modules' => [
+        'gridview' => ['class' => 'kartik\grid\Module']
+    ],
+    'params' => $params,
+];
+
+
+
+if (YII_ENV_DEV) {
+    // configuration adjustments for 'dev' environment
+    $config['bootstrap'][] = 'debug';
+    $config['modules']['debug'] = [
+        'class' => 'yii\debug\Module',
+    ];
+
+    $config['bootstrap'][] = 'gii';
+    $config['modules']['gii'] = [
+        'class' => 'yii\gii\Module',
+    ];
+}
+
+// Ensure the local session folder exists and is writable. This prevents PHP from trying to use system temp folders
+// which on some Windows setups (e.g., Laragon) may not permit the web user to write.
+$sessionDir = dirname(__DIR__) . '/runtime_sessions';
+if (!is_dir($sessionDir)) {
+    @mkdir($sessionDir, 0755, true);
+}
+// Best-effort permissions
+if (is_dir($sessionDir)) {
+    @chmod($sessionDir, 0755);
+}
+
+return $config;
